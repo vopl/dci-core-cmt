@@ -1,0 +1,164 @@
+/* This file is part of the the dci project. Copyright (C) 2013-2021 vopl, shtoba.
+   This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public
+   License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+   This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+   You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+#include <dci/test.hpp>
+#include <dci/cmt.hpp>
+
+using namespace dci::cmt;
+
+/////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+TEST(cmt, when)
+{
+    bool allDone = false;
+    spawn() += [&]
+    {
+        {
+            Event e;
+
+            int progress = 0;
+            whenAny(e).then() += [&](){
+                progress++;
+            };
+            whenAll(e).then() += [&](){
+                progress++;
+            };
+            whenAllAtOnce(e).then() += [&](){
+                progress++;
+            };
+            e.raise();
+            yield();
+            EXPECT_EQ(progress, 3);
+        }
+
+        {
+            Event e0, e1;
+
+            int progress = 0;
+            whenAny(e0, e1).then() += [&](auto f){
+                progress++;
+                EXPECT_EQ(f.value(), 0u);
+            };
+            whenAll(e0, e1).then() += [&](){
+                progress++;
+            };
+            whenAllAtOnce(e0, e1).then() += [&](){
+                progress++;
+            };
+            e0.raise();
+            yield();
+            EXPECT_EQ(progress, 1);
+
+            e1.raise();
+            yield();
+            EXPECT_EQ(progress, 3);
+        }
+
+        {
+            Event e0, e1;
+
+            int progress = 0;
+            whenAny(e0, e1).then() += [&](auto& f){
+                progress++;
+                EXPECT_EQ(f.value(), 1u);
+            };
+            whenAll(e0, e1).then() += [&](){
+                progress++;
+            };
+            whenAllAtOnce(e0, e1).then() += [&](){
+                progress++;
+            };
+            e1.raise();
+            yield();
+            EXPECT_EQ(progress, 1);
+
+            e0.raise();
+            yield();
+            EXPECT_EQ(progress, 3);
+        }
+
+        {
+            Event e;
+            Pulser p;
+
+            int progress = 0;
+            whenAll(e, p).then() += [&](){
+                progress++;
+            };
+
+            yield();
+            EXPECT_EQ(progress, 0);
+
+            p.raise();
+            yield();
+            EXPECT_EQ(progress, 0);
+
+
+            e.raise();
+            yield();
+            EXPECT_EQ(progress, 1);
+        }
+
+        {
+            Event e;
+            Pulser p;
+
+            int progress = 0;
+            whenAllAtOnce(e, p).then() += [&](){
+                progress++;
+            };
+
+            yield();
+            EXPECT_EQ(progress, 0);
+
+            p.raise();
+            yield();
+            EXPECT_EQ(progress, 0);
+
+            e.raise();
+            yield();
+            EXPECT_EQ(progress, 0);
+
+            p.raise();
+            yield();
+            EXPECT_EQ(progress, 1);
+        }
+
+        {
+            Event e;
+            Mutex m(RecursionMode::recursive);
+
+            m.lock();
+
+            int progress = 0;
+
+            spawn() += [&]
+            {
+                whenAll(e, m).then() += [&](){
+                    progress++;
+                    EXPECT_TRUE(m.canLock());//1. recursive, 2. was locked in current coro
+                };
+            };
+
+            yield();
+            EXPECT_EQ(progress, 0);
+
+            e.raise();
+            yield();
+            EXPECT_EQ(progress, 0);
+
+            m.unlock();
+            yield();
+            EXPECT_EQ(progress, 1);
+
+        }
+
+        allDone = true;
+    };
+
+    executeReadyFibers();
+    EXPECT_TRUE(allDone);
+}
