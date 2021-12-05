@@ -471,7 +471,7 @@ namespace dci::cmt
 
         };
 
-        _statePtr->pushContinuation(new Continuation(owner, _statePtr.raw(), std::forward<F>(f)));
+        _statePtr->pushContinuation(new Continuation{owner, _statePtr.raw(), std::forward<F>(f)});
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -607,7 +607,7 @@ namespace dci::cmt
                 }
             }
 
-        }* continuation = new Continuation(owner, _statePtr.raw(), std::forward<F>(f));
+        }* continuation = new Continuation{owner, _statePtr.raw(), std::forward<F>(f)};
 
         auto res = continuation->future();
 

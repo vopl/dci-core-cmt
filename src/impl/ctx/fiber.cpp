@@ -15,57 +15,76 @@ namespace dci::cmt::impl::ctx
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     Fiber* Fiber::alloc(Scheduler* scheduler)
     {
-        mm::Stack stack;
-        stack.initialize();
-        if(!stack.initialized())
+        if constexpr(Engine<Fiber>::_needStack)
         {
-            dbgWarn("internal error");
-            return nullptr;
-        }
+            mm::Stack stack;
+            stack.initialize();
+            if(!stack.initialized())
+            {
+                dbgWarn("internal error");
+                return nullptr;
+            }
 
-        Fiber* fiber;
-        if(stack.growsDown())
-        {
-            fiber = reinterpret_cast<Fiber*>(stack.end() - sizeof(Fiber));
+            Fiber* fiber;
+            if(stack.growsDown())
+            {
+                fiber = reinterpret_cast<Fiber*>(stack.end() - sizeof(Fiber));
+            }
+            else
+            {
+                fiber = reinterpret_cast<Fiber*>(stack.begin());
+            }
+
+            new(fiber) Fiber{scheduler};
+
+            if(stack.growsDown())
+            {
+                char* end = reinterpret_cast<char *>(fiber);
+                fiber->constructFiber(
+                            true,
+                            stack.begin(),
+                            static_cast<std::size_t>(end - stack.begin()));
+            }
+            else
+            {
+                char* begin = reinterpret_cast<char *>(fiber) + sizeof(Fiber);
+                fiber->constructFiber(
+                            false,
+                            begin,
+                            static_cast<std::size_t>(stack.end() - begin));
+            }
+
+            fiber->assignStackIfNeed(std::move(stack));
+
+            return fiber;
         }
         else
         {
-            fiber = reinterpret_cast<Fiber*>(stack.begin());
+            Fiber* fiber = new Fiber{scheduler};
+            fiber->constructFiber(false, nullptr, 0);
+            return fiber;
         }
-
-        new(fiber) Fiber(scheduler, std::move(stack));
-
-        return fiber;
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    Fiber::Fiber(Scheduler* scheduler, mm::Stack&& stack)
+    Fiber::Fiber(Scheduler* scheduler)
         : _scheduler(scheduler)
-        , _stack(std::move(stack))
     {
-        if(_stack.growsDown())
-        {
-            char* end = reinterpret_cast<char *>(this);
-            constructFiber(
-                        _stack.growsDown(),
-                        _stack.begin(),
-                        static_cast<std::size_t>(end - _stack.begin()));
-        }
-        else
-        {
-            char* begin = reinterpret_cast<char *>(this) + sizeof(Fiber);
-            constructFiber(
-                        _stack.growsDown(),
-                        begin,
-                        static_cast<std::size_t>(_stack.end() - begin));
-        }
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     void Fiber::free()
     {
-        mm::Stack stack(std::move(_stack));
-        this->~Fiber();
+        if constexpr(Engine<Fiber>::_needStack)
+        {
+            StackOrNone<Engine<Fiber>::_needStack> stackOrNone{std::move(*this)};
+            (void)stackOrNone;
+            this->~Fiber();
+        }
+        else
+        {
+            delete this;
+        }
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -94,6 +113,8 @@ namespace dci::cmt::impl::ctx
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     void Fiber::contextProc()
     {
+        _scheduler->fiberStarted();
+
         dbgAssert(this == _scheduler->currentFiber());
 
         for(;;)

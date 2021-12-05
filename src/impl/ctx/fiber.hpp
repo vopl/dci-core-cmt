@@ -24,12 +24,46 @@ namespace dci::cmt::impl
 
 namespace dci::cmt::impl::ctx
 {
+    namespace fiber
+    {
+        template <bool needStack>
+        class StackOrNone
+        {
+        protected:
+            mm::Stack _stack;
+
+            void assignStackIfNeed(mm::Stack&& stack)
+            {
+                _stack = std::move(stack);
+            }
+
+            void doStackCompactIfNeed()
+            {
+                _stack.compact();
+            }
+        };
+
+        template <>
+        class StackOrNone<false>
+        {
+        protected:
+            void assignStackIfNeed(mm::Stack&&)
+            {
+            }
+
+            void doStackCompactIfNeed()
+            {
+            }
+        };
+    }
+
     class Fiber
         : public Engine<Fiber>
+        , private fiber::StackOrNone<Engine<Fiber>::_needStack>
     {
         Fiber& operator=(const Fiber&) = delete;
 
-        Fiber(Scheduler* scheduler, mm::Stack&& stack);
+        Fiber(Scheduler* scheduler);
         ~Fiber();
 
     public:
@@ -41,9 +75,16 @@ namespace dci::cmt::impl::ctx
 
     public:
         template <class D2>
-        void switchTo(Engine<D2>* to)
+        void switchTo(Engine<D2>* to, bool doCompact = true)
         {
-            _stack.compact();
+            if constexpr(Engine<Fiber>::_needStack)
+            {
+                if(doCompact)
+                {
+                    doStackCompactIfNeed();
+                }
+            }
+
             Engine::switchTo(to);
         }
 
@@ -51,13 +92,12 @@ namespace dci::cmt::impl::ctx
         [[noreturn]] void contextProc();
 
     private:
-        Scheduler *     _scheduler {};
-        mm::Stack       _stack;
-        task::Body *    _task {};
+        Scheduler*  _scheduler {};
+        task::Body* _task {};
 
     private:
         friend class dci::cmt::impl::scheduler::EffortContainer<Fiber>;
         friend class dci::cmt::impl::Scheduler;
-        Fiber *  _nextInEffortContainer {};
+        Fiber*      _nextInEffortContainer {};
     };
 }

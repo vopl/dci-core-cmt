@@ -12,6 +12,7 @@
 #include "task/face.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace dci::cmt::impl
 {
@@ -234,20 +235,33 @@ namespace dci::cmt::impl
         _fiberEnumerationCallback = cb;
         _fiberEnumerationCallbackData = data;
 
-        //switch to root
-        if(_currentFiber)
+        _enumerateInitiator = std::exchange(_currentFiber, {});
+        if(_enumerateInitiator)
         {
-            _currentFiber->switchTo(&_rootContext);
-        }
+            //enumerate initiator
+            _fiberEnumerationCallback(_enumerateInitiator->task()->state(), _fiberEnumerationCallbackData);
 
-        //enumerate root
-        _fiberEnumerationCallback(cmt::task::State::null, _fiberEnumerationCallbackData);
+            //switch to root
+            _enumerateInitiator->switchTo(&_rootContext, false);
+        }
+        else
+        {
+            //already in root, enumerate
+            _fiberEnumerationCallback(cmt::task::State::null, _fiberEnumerationCallbackData);
+        }
 
         //ready fibers
         _enumerateFiber = _ready.first();
         if(_enumerateFiber)
         {
-            _rootContext.switchTo(_enumerateFiber);
+            if(_enumerateInitiator)
+            {
+                _enumerateInitiator->switchTo(_enumerateFiber, false);
+            }
+            else
+            {
+                _rootContext.switchTo(_enumerateFiber);
+            }
             dbgAssert(!_enumerateFiber);
         }
 
@@ -255,15 +269,19 @@ namespace dci::cmt::impl
         _enumerateFiber = _hold.first();
         if(_enumerateFiber)
         {
-            _rootContext.switchTo(_enumerateFiber);
+            if(_enumerateInitiator)
+            {
+                _enumerateInitiator->switchTo(_enumerateFiber, false);
+            }
+            else
+            {
+                _rootContext.switchTo(_enumerateFiber);
+            }
             dbgAssert(!_enumerateFiber);
         }
 
-        //switch back to original fiber
-        if(_currentFiber)
-        {
-            _rootContext.switchTo(_currentFiber);
-        }
+        //already switched back to original fiber or root
+        _currentFiber = std::exchange(_enumerateInitiator, {});
 
         dbgAssert(cb == _fiberEnumerationCallback);
         _fiberEnumerationCallback = {};
@@ -285,6 +303,12 @@ namespace dci::cmt::impl
         }
 
         return _currentFiber->task();
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Scheduler::fiberStarted()
+    {
+        handleFiberAwake();
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -400,37 +424,51 @@ namespace dci::cmt::impl
 
         _currentFiber = to;
         _rootContext.switchTo(to);
+        handleRootAwake();
 
         dbgAssert(!_currentFiber);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Scheduler::handleFiberAwake()
+    void Scheduler::handleRootAwake()
     {
-        if(_enumerateFiber)
+        dbgAssert(!_currentFiber);
+        dbgAssert(!_enumerateFiber);
+        while(_enumerateInitiator)
         {
-            handleFiberEnumeration();
+            //enumerate root
+            _fiberEnumerationCallback(cmt::task::State::null, _fiberEnumerationCallbackData);
 
-            ctx::Fiber *prev = _enumerateFiber;
-            _enumerateFiber = prev->_nextInEffortContainer;
-
-            if(_enumerateFiber)
-            {
-                prev->switchTo(_enumerateFiber);
-                return;
-            }
-            else
-            {
-                prev->switchTo(&_rootContext);
-            }
+            _rootContext.switchTo(_enumerateInitiator);
         }
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Scheduler::handleFiberEnumeration()
+    void Scheduler::handleFiberAwake()
     {
-        dbgAssert(_fiberEnumerationCallback);
-        _fiberEnumerationCallback(_currentFiber->task()->state(), _fiberEnumerationCallbackData);
+        while(_enumerateInitiator)
+        {
+            //enumerate
+            dbgAssert(_enumerateFiber);
+            dbgAssert(_fiberEnumerationCallback);
+            _fiberEnumerationCallback(_enumerateFiber->task()->state(), _fiberEnumerationCallbackData);
+
+            ctx::Fiber *prev = _enumerateFiber;
+            _enumerateFiber = _enumerateFiber->_nextInEffortContainer;
+            if(_enumerateFiber == _enumerateInitiator)
+            {
+                _enumerateFiber = _enumerateFiber->_nextInEffortContainer;
+            }
+
+            if(_enumerateFiber)
+            {
+                prev->switchTo(_enumerateFiber, false);
+            }
+            else
+            {
+                prev->switchTo(_enumerateInitiator, false);
+            }
+        }
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7

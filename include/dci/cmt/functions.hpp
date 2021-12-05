@@ -134,7 +134,7 @@ namespace dci::cmt
             }
         };
 
-        TaskInstance* instance = new TaskInstance(owner, std::forward<F>(f));
+        TaskInstance* instance = new TaskInstance{owner, std::forward<F>(f)};
         spawn(instance);
     }
 
@@ -295,7 +295,7 @@ namespace dci::cmt
              }
         };
 
-        TaskInstance* instance = new TaskInstance(owner, std::forward<F>(f));
+        TaskInstance* instance = new TaskInstance{owner, std::forward<F>(f)};
         spawn(instance);
 
         return instance->future();

@@ -44,6 +44,7 @@ namespace dci::cmt::impl
         ctx::Fiber* currentFiber();
         task::Body* currentTask();
 
+        void fiberStarted();
         void taskCompleted();
 
     private:
@@ -53,8 +54,8 @@ namespace dci::cmt::impl
         void r2f(ctx::Fiber* to);
 
     private:
+        void handleRootAwake();
         void handleFiberAwake();
-        void handleFiberEnumeration();
 
     private:
         static Scheduler    _instance;
@@ -66,9 +67,9 @@ namespace dci::cmt::impl
         scheduler::EffortContainer<ctx::Fiber>  _ready;
 
     private:
+        ctx::Fiber*                 _enumerateInitiator{};
         ctx::Fiber*                 _enumerateFiber{};
         FiberEnumerationCallback    _fiberEnumerationCallback {};
         void*                       _fiberEnumerationCallbackData {};
-//        std::unique_ptr<std::ostream>   _enumerateDumpTarget;
     };
 }

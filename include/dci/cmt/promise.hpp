@@ -393,7 +393,7 @@ namespace dci::cmt
             }
         };
 
-        _statePtr->pushCancelContinuation(new Continuation(owner, std::forward<F>(f)));
+        _statePtr->pushCancelContinuation(new Continuation{owner, std::forward<F>(f)});
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7

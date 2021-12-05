@@ -16,9 +16,10 @@ namespace dci::cmt::impl::ctx
     template <class Derived>
     class Engine
     {
-    protected:
-        Engine();
+    public:
+        static constexpr bool _needStack = true;
 
+    protected:
         void constructRoot();
         void destructRoot();
 
@@ -39,17 +40,8 @@ namespace dci::cmt::impl::ctx
 
     private:
         template<class D> friend class Engine;
-        boost::context::detail::fcontext_t _ctx;
+        boost::context::detail::fcontext_t _ctx{};
     };
-
-
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    template <class Derived>
-    Engine<Derived>::Engine()
-        : _ctx()
-    {
-    }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     template <class Derived>
@@ -92,7 +84,6 @@ namespace dci::cmt::impl::ctx
     void Engine<Derived>::destructFiber()
     {
         dbgAssert(_ctx);
-
         _ctx = nullptr;
     }
 
@@ -126,6 +117,5 @@ namespace dci::cmt::impl::ctx
         Derived* derived = static_cast<Derived*>(engine);
         derived->contextProc();
     }
-
 }
 

@@ -21,7 +21,7 @@ namespace dci::cmt
             throw cmt::task::Stop{};
         }
 
-        return impl::Scheduler::instance().yield();
+        return s.yield();
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
