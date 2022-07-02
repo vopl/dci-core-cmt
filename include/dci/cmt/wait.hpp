@@ -16,8 +16,6 @@ namespace dci::cmt
     template <class... Waitables> void           waitAll         (Waitables&... waitables);
     template <class... Waitables> void           waitAllAtOnce   (Waitables&... waitables);
 
-
-
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     template <class... Waitables> std::size_t waitAny(Waitables&... waitables)
     {

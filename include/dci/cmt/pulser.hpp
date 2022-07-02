@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include <dci/cmt/waitable.hpp>
-#include <dci/cmt/raisable.hpp>
-#include <dci/cmt/wakeMode.hpp>
+#include "waitable.hpp"
+#include "raisable.hpp"
+#include "wakeMode.hpp"
 
 namespace dci::cmt
 {

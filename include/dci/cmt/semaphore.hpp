@@ -7,8 +7,8 @@
 
 #pragma once
 
-#include <dci/cmt/lockable.hpp>
-#include <dci/cmt/recursionMode.hpp>
+#include "lockable.hpp"
+#include "recursionMode.hpp"
 
 namespace dci::cmt
 {

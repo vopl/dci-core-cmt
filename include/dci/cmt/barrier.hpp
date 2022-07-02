@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <dci/cmt/waitable.hpp>
+#include "waitable.hpp"
 #include <cstdint>
 
 namespace dci::cmt

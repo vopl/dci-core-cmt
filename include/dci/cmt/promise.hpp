@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include <dci/cmt/promiseNullInitializer.hpp>
-#include <dci/cmt/details/future/statePtr.hpp>
-#include <dci/cmt/details/transformHolder.hpp>
+#include "promiseNullInitializer.hpp"
+#include "details/future/statePtr.hpp"
+#include "details/transformHolder.hpp"
 #include <dci/utils/dbg.hpp>
 
 #include <memory>

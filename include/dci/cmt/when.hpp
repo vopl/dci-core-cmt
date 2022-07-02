@@ -7,7 +7,8 @@
 
 #pragma once
 
-#include <dci/cmt/future.hpp>
+#include "details/waiterCaller.hpp"
+#include "future.hpp"
 #include <cstdint>
 
 namespace dci::cmt

@@ -7,10 +7,10 @@
 
 #pragma once
 
-#include <dci/cmt/waitable.hpp>
-#include <dci/cmt/details/transformHolder.hpp>
-#include <dci/cmt/details/future/statePtr.hpp>
-#include <dci/cmt/future/exception.hpp>
+#include "waitable.hpp"
+#include "details/transformHolder.hpp"
+#include "details/future/statePtr.hpp"
+#include "future/exception.hpp"
 #include <exception>
 #include <type_traits>
 

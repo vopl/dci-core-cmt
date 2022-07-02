@@ -7,8 +7,8 @@
 
 #pragma once
 
-#include <dci/cmt/waitable.hpp>
-#include <dci/cmt/raisable.hpp>
+#include "waitable.hpp"
+#include "raisable.hpp"
 
 namespace dci::cmt
 {
