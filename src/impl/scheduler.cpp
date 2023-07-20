@@ -26,54 +26,43 @@ namespace dci::cmt::impl
     Scheduler::~Scheduler()
     {
         {
-            dbgAssert(_ready.empty());
+            dbgAssert(_spawnedTasks.empty());
 
-            ctx::Fiber* fiber = _ready.dequeue();
-            while(fiber)
+            task::Body* task = _spawnedTasks.dequeue();
+            while(task)
+            {
+                task->destroy();
+                task = _spawnedTasks.dequeue();
+            }
+        }
+
+        auto flushFibers = [](scheduler::EffortContainer<ctx::Fiber>& fibers)
+        {
+            while(ctx::Fiber* fiber = fibers.dequeue())
             {
                 task::Body* task = fiber->task();
-                dbgAssert(task);
                 if(task)
                 {
                     task->destroy();
                 }
 
                 dbgAssert(!fiber->task());
-
                 fiber->free();
-                fiber = _ready.dequeue();
+                fiber = fibers.dequeue();
             }
-        }
+        };
 
-        {
-            ctx::Fiber* fiber = _empty.dequeue();
-            while(fiber)
-            {
-                dbgAssert(!fiber->task());
-                fiber->free();
-                fiber = _empty.dequeue();
-            }
-        }
+        dbgAssert(_hold.empty());
+        flushFibers(_hold);
 
-        {
-            dbgAssert(_hold.empty());
+        //dbgAssert(_empty.empty());
+        flushFibers(_empty);
 
-            ctx::Fiber* fiber = _hold.dequeue();
-            while(fiber)
-            {
-                task::Body* task = fiber->task();
-                dbgAssert(task);
-                if(task)
-                {
-                    task->destroy();
-                }
+        dbgAssert(_ready.empty());
+        flushFibers(_ready);
 
-                dbgAssert(!fiber->task());
-
-                fiber->free();
-                fiber = _hold.dequeue();
-            }
-        }
+        dbgAssert(_readyLowPriority.empty());
+        flushFibers(_readyLowPriority);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -88,46 +77,31 @@ namespace dci::cmt::impl
         dbgAssert(task);
         dbgAssert(cmt::task::State::null == task->state());
 
-        ctx::Fiber* fiber = _empty.dequeue();
-        if(!fiber)
-        {
-            fiber = ctx::Fiber::alloc(this);
-            if(!fiber)
-            {
-                dbgWarn("unable to allocate new fiber");
-                std::abort();
-            }
-        }
-
-        dbgAssert(!fiber->task());
-        fiber->setTask(task);
-        task->setFiber(fiber);
-        task->setState(cmt::task::State::ready);
-
-        _ready.enqueue(fiber);
+        _spawnedTasks.enqueue(task);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     bool Scheduler::yield()
     {
+        if(_ready.empty() && _spawnedTasks.empty() && _readyLowPriority.empty())
+        {
+            return false;
+        }
+
         dbgAssert(_currentFiber);
 
         task::Body* task = _currentFiber->task();
         dbgAssert(task);
         dbgAssert(cmt::task::State::work == task->state());
 
-        if(_ready.empty())
-        {
-            return false;
-        }
-
         ctx::Fiber* current = _currentFiber;
 
         ctx::Fiber* next = dequeueReadyFiber();
+        dbgAssert(next);
         dbgAssert(next != current);
 
         task->setState(cmt::task::State::ready);
-        _ready.enqueue(current);
+        _readyLowPriority.enqueue(current);
 
         f2f(current, next);
 
@@ -224,6 +198,8 @@ namespace dci::cmt::impl
         }
 
         dbgAssert(_ready.empty());
+        dbgAssert(_spawnedTasks.empty());
+        dbgAssert(_readyLowPriority.empty());
 
         return res;
     }
@@ -252,6 +228,11 @@ namespace dci::cmt::impl
 
         //ready fibers
         _enumerateFiber = _ready.first();
+        if(!_enumerateFiber)
+        {
+            _enumerateFiber = _readyLowPriority.first();
+        }
+
         if(_enumerateFiber)
         {
             if(_enumerateInitiator)
@@ -346,6 +327,42 @@ namespace dci::cmt::impl
     ctx::Fiber* Scheduler::dequeueReadyFiber()
     {
         ctx::Fiber* fiber = _ready.dequeue();
+        if(fiber)
+        {
+            dbgAssert(fiber->task());
+            dbgAssert(cmt::task::State::ready == fiber->task()->state());
+            dbgAssert(fiber == fiber->task()->fiber());
+            return fiber;
+        }
+
+        task::Body* task = _spawnedTasks.dequeue();
+        if(task)
+        {
+            fiber = _empty.dequeue();
+            if(fiber)
+            {
+                dbgAssert(!fiber->task());
+                fiber->setTask(task);
+                task->setFiber(fiber);
+                task->setState(cmt::task::State::ready);
+                return fiber;
+            }
+
+            fiber =  ctx::Fiber::alloc(this);
+            if(!fiber)
+            {
+                dbgWarn("unable to allocate new fiber");
+                std::abort();
+            }
+
+            dbgAssert(!fiber->task());
+            fiber->setTask(task);
+            task->setFiber(fiber);
+            task->setState(cmt::task::State::ready);
+            return fiber;
+        }
+
+        fiber = _readyLowPriority.dequeue();
         if(fiber)
         {
             dbgAssert(fiber->task());

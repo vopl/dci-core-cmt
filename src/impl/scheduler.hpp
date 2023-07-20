@@ -65,6 +65,8 @@ namespace dci::cmt::impl
         scheduler::EffortContainer<ctx::Fiber>  _hold;
         scheduler::EffortContainer<ctx::Fiber>  _empty;
         scheduler::EffortContainer<ctx::Fiber>  _ready;
+        scheduler::EffortContainer<task::Body>  _spawnedTasks;
+        scheduler::EffortContainer<ctx::Fiber>  _readyLowPriority;
 
     private:
         ctx::Fiber*                 _enumerateInitiator{};
