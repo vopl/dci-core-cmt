@@ -34,9 +34,10 @@ namespace dci::cmt::impl::task
 
         void flush(bool andWait);
         void stop(bool andWait);
+        void wait();
 
     private:
-        void stopImpl(bool once, bool wait);
+        void stopImpl(bool once, bool andWait);
 
     private:
         utils::IntrusiveDlist<Body, Owner>  _tasks;

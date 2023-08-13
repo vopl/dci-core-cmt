@@ -44,4 +44,11 @@ namespace dci::cmt::task
     {
         return impl().stop(andWait);
     }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Owner::wait()
+    {
+        return impl().wait();
+    }
+
 }

@@ -68,7 +68,54 @@ namespace dci::cmt::impl::task
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Owner::stopImpl(bool once, bool wait)
+    void Owner::wait()
+    {
+        for(;;)
+        {
+            Body* first = _tasks.first();
+
+            if(!first)
+            {
+                //no more tasks, break
+                break;
+            }
+
+            if(first == _tasks.last() && Scheduler::instance().currentTask() == first)
+            {
+                //waiting for self, break
+                break;
+            }
+
+            if(!Scheduler::instance().yield())
+            {
+                //no other fibers ready
+
+                Body* only = _tasks.first();
+                dbgAssert(only);
+
+                if(only != _tasks.last())
+                {
+                    std::cerr<<"internal error in cmt::Owner::stopWait (1)\n";
+                    std::cerr.flush();
+                    std::abort();
+                }
+
+                dbgAssert(only->stopRequested());
+                if(Scheduler::instance().currentTask() == only)
+                {
+                    //waiting for self, break
+                    break;
+                }
+
+                std::cerr<<"internal error in cmt::Owner::stopWait (2)\n";
+                std::cerr.flush();
+                std::abort();
+            }
+        }
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Owner::stopImpl(bool once, bool andWait)
     {
         _stopRequested = true;
         _tasks.each([](Body* task)
@@ -76,55 +123,10 @@ namespace dci::cmt::impl::task
             task->stop(false);
         });
 
-        if(wait)
-        {
-            for(;;)
-            {
-                Body* first = _tasks.first();
-
-                if(!first)
-                {
-                    //no more tasks, break
-                    break;
-                }
-
-                if(first == _tasks.last() && Scheduler::instance().currentTask() == first)
-                {
-                    //waiting for self, break
-                    break;
-                }
-
-                if(!Scheduler::instance().yield())
-                {
-                    //no other fibers ready
-
-                    Body* only = _tasks.first();
-                    dbgAssert(only);
-
-                    if(only != _tasks.last())
-                    {
-                        std::cerr<<"internal error in cmt::Owner::stopWait (1)\n";
-                        std::cerr.flush();
-                        std::abort();
-                    }
-
-                    dbgAssert(only->stopRequested());
-                    if(Scheduler::instance().currentTask() == only)
-                    {
-                        //waiting for self, break
-                        break;
-                    }
-
-                    std::cerr<<"internal error in cmt::Owner::stopWait (2)\n";
-                    std::cerr.flush();
-                    std::abort();
-                }
-            }
-        }
+        if(andWait)
+            wait();
 
         if(once)
-        {
             _stopRequested = false;
-        }
     }
 }

@@ -33,6 +33,7 @@ namespace dci::cmt::task
 
         void flush(bool andWait = true);
         void stop(bool andWait = true);
+        void wait();
     };
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
