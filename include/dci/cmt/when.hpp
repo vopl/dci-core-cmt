@@ -13,27 +13,35 @@
 
 namespace dci::cmt
 {
-    template <class... Waitables> Future<std::size_t>    whenAny         (Waitables&...);
-    template <class... Waitables> Future<void>           whenAll         (Waitables&...);
-    template <class... Waitables> Future<void>           whenAllAtOnce   (Waitables&...);
-
-
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template <details::CWaitableOrContainer... Waitables> Future<std::size_t> whenAny(Waitables&...);
+    template <details::CWaitableOrContainer... Waitables> Future<void>        whenAll(Waitables&...);
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    template <class... Waitables> Future<std::size_t> whenAny(Waitables&... waitables)
+    template <details::CExpr Expr> std::bitset<details::expr::countWaitables<Expr>> when(Expr&& expr);
+    template <details::CVSrc VSrc> std::bitset<1                                  > when(VSrc&& vSrc);
+}
+
+namespace dci::cmt
+{
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template <details::CWaitableOrContainer... Waitables> Future<std::size_t> whenAny(Waitables&... waitables)
     {
-        return details::waiterCaller<details::WaitKind::any, false>(waitables...);
+        return details::waiterCaller<details::Kind::any, false>(waitables...);
     }
 
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    template <class... Waitables> Future<void> whenAll(Waitables&... waitables)
+    template <details::CWaitableOrContainer... Waitables> Future<void> whenAll(Waitables&... waitables)
     {
-        return details::waiterCaller<details::WaitKind::all, false>(waitables...);
+        return details::waiterCaller<details::Kind::all, false>(waitables...);
     }
 
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    template <class... Waitables> Future<void> whenAllAtOnce(Waitables&... waitables)
+    template <details::CExpr Expr> std::bitset<details::expr::countWaitables<Expr>()> when(Expr&& expr)
     {
-        return details::waiterCaller<details::WaitKind::allAtOnce, false>(waitables...);
+        return details::waiterCaller<details::Kind::expr, false>(expr);
+    }
+
+    template <details::CVSrc VSrc> std::bitset<1> when(VSrc&& vSrc)
+    {
+        return when(details::Val{&vSrc});
     }
 }

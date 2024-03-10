@@ -8,8 +8,8 @@
 #pragma once
 
 #include <dci/cmt/details/wwLink.hpp>
+#include <dci/primitives.hpp>
 #include "../ctx/fiber.hpp"
-#include <cstdint>
 
 namespace dci::cmt::impl::details
 {
@@ -19,24 +19,18 @@ namespace dci::cmt::impl::details
 
     class Waiter final
     {
+        using ExprEvaluator = bool(*)(void* eeData);
+
     public:
         Waiter(WWLink* links, std::size_t amount);
+        Waiter(WWLink* links, std::size_t amount, void(*cb)(void* cbData), void* cbData);
         ~Waiter();
 
-        std::size_t any();
+        void any(std::size_t* acquiredIndex);
         void all();
-        void allAtOnce();
-
-        void any(void(*cb)(void* cbData, std::size_t index), void* cbData);
-        void all(void(*cb)(void* cbData), void* cbData);
-        void allAtOnce(void(*cb)(void* cbData), void* cbData);
+        void expr(ExprEvaluator ee, void* eeData, std::byte* bits);
 
         void reset();
-
-    private:
-        bool anyImpl();
-        bool allImpl();
-        bool allAtOnceImpl();
 
     public:
         ctx::Fiber* fiber();
@@ -44,40 +38,60 @@ namespace dci::cmt::impl::details
         void waitableDead(WWLink* link);
 
     private:
-        void throwTaskStopIfNeed();
+        struct ModeSync
+        {
+            ctx::Fiber* _fiber{};
+        };
+
+        struct ModeAsync
+        {
+            void(*_cb)(void* cbData){};
+            void* _cbData{};
+        };
 
     private:
-        WWLink *    _links;
-        std::size_t _linksAmount;
-
-        enum class Mode
+        struct StateNull
         {
-            null,
+        };
 
-            any,
-            anyAsync,
-
-            all,
-            allAsync,
-
-            allAtOnce,
-            allAtOnceAsync,
-        } _mode;
-
-        union
+        struct StateAll
         {
-            std::size_t _acquiredAmount;
-            std::size_t _acquiredIndex;
-        } _perModeState;
+        };
 
-        union
+        struct StateAny
         {
-            void(*_cb)(void* cbData);
-            void(*_cbIndex)(void* cbData, std::size_t index);
-            ctx::Fiber* _fiber;
-        } _asyncData;
+            std::size_t* _acquiredIndex{};
+        };
 
-        void* _asyncCallbackData;
+        struct StateExpr
+        {
+            ExprEvaluator   _evaluator{};
+            void*           _evaluatorData{};
+            std::byte*      _bits{};
+        };
+
+    private:
+        template <class State> void exec(auto&&... args);
+
+        bool ready(StateNull& state, WWLink* offeredFrom = {});
+        bool ready(StateAll& state, WWLink* offeredFrom = {});
+        bool ready(StateAny& state, WWLink* offeredFrom = {});
+        bool ready(StateExpr& state, WWLink* offeredFrom = {});
+
+        void commit(StateNull& state, WWLink* offeredFrom = {});
+        void commit(StateAll& state, WWLink* offeredFrom = {});
+        void commit(StateAny& state, WWLink* offeredFrom = {});
+        void commit(StateExpr& state, WWLink* offeredFrom = {});
+
+        void beginAcquire();
+        void endAcquire();
+
+    private:
+        WWLink *    _links{};
+        std::size_t _linksAmount{};
+
+        Variant<ModeSync, ModeAsync> _mode;
+        Variant<StateNull, StateAll, StateAny, StateExpr> _state{};
     };
 
 }

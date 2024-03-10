@@ -27,3 +27,4 @@
 
 #include "cmt/wait.hpp"
 #include "cmt/when.hpp"
+#include "cmt/operators.hpp"

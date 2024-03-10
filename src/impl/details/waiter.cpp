@@ -9,6 +9,8 @@
 #include "../waitable.hpp"
 #include "../scheduler.hpp"
 #include <dci/cmt/task/stop.hpp>
+#include <dci/utils/atScopeExit.hpp>
+#include <climits>
 
 namespace dci::cmt::impl::details
 {
@@ -16,328 +18,69 @@ namespace dci::cmt::impl::details
     Waiter::Waiter(WWLink* links, std::size_t amount)
         : _links(links)
         , _linksAmount(amount)
-        , _mode(Mode::null)
-        , _perModeState()
-        , _asyncData()
-        , _asyncCallbackData()
+        , _mode{ModeSync{}}
+        , _state{StateNull{}}
+    {
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    Waiter::Waiter(WWLink* links, std::size_t amount, void(*cb)(void* cbData), void* cbData)
+        : _links(links)
+        , _linksAmount(amount)
+        , _mode{ModeAsync{cb, cbData}}
+        , _state{StateNull{}}
     {
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     Waiter::~Waiter()
     {
+        reset();
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    std::size_t Waiter::any()
+    void Waiter::any(std::size_t* acquiredIndex)
     {
-        dbgAssert(Mode::null == _mode);
-        dbgAssert(!_asyncData._fiber);
-        dbgAssert(!_perModeState._acquiredIndex);
-
-        throwTaskStopIfNeed();
-
-        _mode = Mode::any;
-
-        if(!anyImpl())
-        {
-            dbgAssert(Scheduler::instance().currentFiber());
-            _asyncData._fiber = Scheduler::instance().currentFiber();
-            Scheduler::instance().hold();
-
-            reset();
-
-            task::Body* task = _asyncData._fiber->task();
-            if(task->stopRequested())
-            {
-                throw cmt::task::Stop{};
-            }
-        }
-
-        return _perModeState._acquiredIndex;
+        exec<StateAny>(acquiredIndex);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     void Waiter::all()
     {
-        dbgAssert(Mode::null == _mode);
-        dbgAssert(!_asyncData._fiber);
-        dbgAssert(!_perModeState._acquiredAmount);
-
-        throwTaskStopIfNeed();
-
-        _mode = Mode::all;
-
-        if(!allImpl())
-        {
-            dbgAssert(Scheduler::instance().currentFiber());
-            _asyncData._fiber = Scheduler::instance().currentFiber();
-            Scheduler::instance().hold();
-
-            dbgAssert(_asyncData._fiber->task()->stopRequested() || _perModeState._acquiredAmount == _linksAmount);
-
-            reset();
-
-            task::Body* task = _asyncData._fiber->task();
-            if(task->stopRequested())
-            {
-                throw cmt::task::Stop{};
-            }
-        }
+        exec<StateAll>();
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::allAtOnce()
+    void Waiter::expr(ExprEvaluator ee, void* eeData, std::byte* bits)
     {
-        dbgAssert(Mode::null == _mode);
-        dbgAssert(!_asyncData._fiber);
-
-        throwTaskStopIfNeed();
-
-        _mode = Mode::allAtOnce;
-
-        if(!allAtOnceImpl())
-        {
-            dbgAssert(Scheduler::instance().currentFiber());
-            _asyncData._fiber = Scheduler::instance().currentFiber();
-            Scheduler::instance().hold();
-
-            reset();
-
-            task::Body* task = _asyncData._fiber->task();
-            if(task->stopRequested())
-            {
-                throw cmt::task::Stop{};
-            }
-        }
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::any(void(*cb)(void* cbData, std::size_t index), void* cbData)
-    {
-        dbgAssert(Mode::null == _mode);
-        dbgAssert(!_asyncData._cbIndex);
-        dbgAssert(!_perModeState._acquiredIndex);
-
-        _asyncData._cbIndex = cb;
-        _asyncCallbackData = cbData;
-        _mode = Mode::anyAsync;
-
-        if(anyImpl())
-        {
-            _asyncData._cbIndex(_asyncCallbackData, _perModeState._acquiredIndex);
-        }
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::all(void(*cb)(void* cbData), void* cbData)
-    {
-        dbgAssert(Mode::null == _mode);
-        dbgAssert(!_asyncData._cb);
-        dbgAssert(!_perModeState._acquiredIndex);
-
-        _asyncData._cb = cb;
-        _asyncCallbackData = cbData;
-        _mode = Mode::allAsync;
-
-        if(allImpl())
-        {
-            _asyncData._cb(_asyncCallbackData);
-        }
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::allAtOnce(void(*cb)(void* cbData), void* cbData)
-    {
-        dbgAssert(Mode::null == _mode);
-        dbgAssert(!_asyncData._cb);
-        dbgAssert(!_perModeState._acquiredIndex);
-
-        _asyncData._cb = cb;
-        _asyncCallbackData = cbData;
-        _mode = Mode::allAtOnceAsync;
-
-        if(allAtOnceImpl())
-        {
-            _asyncData._cb(_asyncCallbackData);
-        }
+        exec<StateExpr>(ee, eeData, bits);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     void Waiter::reset()
     {
-        switch(_mode)
-        {
-        case Mode::null:
-            break;
-
-        case Mode::any:
-        case Mode::all:
-        case Mode::allAtOnce:
-
-        case Mode::anyAsync:
-        case Mode::allAsync:
-        case Mode::allAtOnceAsync:
-            {
-                _mode = Mode::null;
-
-                WWLink* linksEnd = _links + _linksAmount;
-                for(WWLink* iter = _links; iter != linksEnd; ++iter)
-                {
-                    if(iter->_connected)
-                    {
-                        dbgAssert(iter->_waitable);
-                        dbgAssert(this == iter->_waiter);
-                        iter->_waitable->endAcquire(iter);
-                        iter->_connected = false;
-                    }
-                }
-            }
-            break;
-        }
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    bool Waiter::anyImpl()
-    {
-        dbgAssert(Mode::any == _mode || Mode::anyAsync == _mode);
-        dbgAssert(!_asyncData._fiber || Mode::anyAsync == _mode);
-        dbgAssert(!_perModeState._acquiredIndex);
-
-        WWLink* linksEnd = _links + _linksAmount;
-        for(WWLink* link = _links; link != linksEnd; ++link)
-        {
-            if(link->_waitable->tryAcquire())
-            {
-                for(WWLink* link2 = _links; link2 != link; ++link2)
-                {
-                    dbgAssert(link2->_connected);
-                    dbgAssert(link2->_waitable);
-                    dbgAssert(this == link2->_waiter);
-                    link2->_waitable->endAcquire(link2);
-                    link2->_connected = false;
-                }
-
-                _perModeState._acquiredIndex = static_cast<std::size_t>(link - _links);
-                _mode = Mode::null;
-                return true;
-            }
-            else
-            {
-                dbgAssert(!link->_connected);
-                dbgAssert(!link->_waiter);
-                dbgAssert(link->_waitable);
-                link->_waiter = this;
-                link->_waitable->beginAcquire(link);
-                link->_connected = true;
-            }
-        }
-
-        return false;
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    bool Waiter::allImpl()
-    {
-        dbgAssert(Mode::all == _mode || Mode::allAsync == _mode);
-        dbgAssert(!_asyncData._fiber || Mode::allAsync == _mode);
-        dbgAssert(!_perModeState._acquiredAmount);
-
-        WWLink* linksEnd = _links + _linksAmount;
-        for(WWLink* link = _links; link != linksEnd; ++link)
-        {
-            if(link->_waitable->tryAcquire())
-            {
-                _perModeState._acquiredAmount++;
-            }
-            else
-            {
-                dbgAssert(!link->_connected);
-                dbgAssert(!link->_waiter);
-                dbgAssert(link->_waitable);
-                link->_waiter = this;
-                link->_waitable->beginAcquire(link);
-                link->_connected = true;
-            }
-        }
-
-        if(_perModeState._acquiredAmount >= _linksAmount)
-        {
-            dbgAssert(_perModeState._acquiredAmount == _linksAmount);
-            _mode = Mode::null;
-            return true;
-        }
-
-        return false;
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    bool Waiter::allAtOnceImpl()
-    {
-        dbgAssert(Mode::allAtOnce == _mode || Mode::allAtOnceAsync == _mode);
-        dbgAssert(!_asyncData._fiber || Mode::allAtOnceAsync == _mode);
-
-        bool allReady = true;
-
-        WWLink* linksEnd = _links + _linksAmount;
-        for(WWLink* link = _links; link != linksEnd; ++link)
-        {
-            if(!link->_waitable->canAcquire())
-            {
-                allReady = false;
-                break;
-            }
-        }
-
-        if(allReady)
-        {
-            for(WWLink* link = _links; link != linksEnd; ++link)
-            {
-                bool b = link->_waitable->tryAcquire();
-                dbgAssert(b);
-                (void)b;
-            }
-
-            _mode = Mode::null;
-            return true;
-        }
-
-        for(WWLink* link = _links; link != linksEnd; ++link)
-        {
-            dbgAssert(!link->_connected);
-            dbgAssert(!link->_waiter);
-            dbgAssert(link->_waitable);
-            link->_waiter = this;
-            link->_waitable->beginAcquire(link);
-            link->_connected = true;
-        }
-
-        return false;
+        endAcquire();
+        _state = StateNull{};
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     ctx::Fiber* Waiter::fiber()
     {
-        switch(_mode)
+        return _mode.visit([]<class Mode>(Mode& mode) -> ctx::Fiber*
         {
-        case Mode::null:
-            dbgWarn("never here");
-            return nullptr;
+            if constexpr(std::is_same_v<ModeSync, Mode>)
+            {
+                return mode._fiber;
+            }
 
-        case Mode::any:
-        case Mode::all:
-        case Mode::allAtOnce:
-            dbgAssert(_asyncData._fiber);
-            return _asyncData._fiber;
+            if constexpr(std::is_same_v<ModeAsync, Mode>)
+            {
+                return Scheduler::instance().currentFiber();
+            }
 
-        case Mode::anyAsync:
-        case Mode::allAsync:
-        case Mode::allAtOnceAsync:
-            return Scheduler::instance().currentFiber();
-        }
-
-        dbgWarn("never here");
-        return nullptr;
+            dbgFatal("never here");
+            return {};
+        });
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -346,133 +89,34 @@ namespace dci::cmt::impl::details
         dbgAssert(link >= _links && link < _links+_linksAmount);
         dbgAssert(this == link->_waiter);
 
-        switch(_mode)
+        return _state.visit([&]<class State>(State& state)
         {
-        case Mode::null:
+            if(!ready(state, link))
+            {
+                return false;
+            }
+            commit(state, link);
+            reset();
+
+            _mode.visit([&]<class Mode>(Mode& mode)
+            {
+                if constexpr(std::is_same_v<ModeSync, Mode>)
+                {
+                    Scheduler::instance().ready(mode._fiber);
+                    return;
+                }
+
+                if constexpr(std::is_same_v<ModeAsync, Mode>)
+                {
+                    mode._cb(mode._cbData);
+                    return;
+                }
+
+                dbgFatal("never here");
+            });
+
             return true;
-
-        case Mode::any:
-        case Mode::anyAsync:
-            {
-                WWLink* linksEnd = _links + _linksAmount;
-                for(WWLink* iter = _links; iter != linksEnd; ++iter)
-                {
-                    if(iter->_connected)
-                    {
-                        dbgAssert(iter->_waitable);
-                        dbgAssert(this == iter->_waiter);
-                        iter->_waitable->endAcquire(iter);
-                        iter->_connected = false;
-                    }
-                }
-
-                _perModeState._acquiredIndex = static_cast<std::size_t>(link - _links);
-
-                if(Mode::anyAsync == _mode)
-                {
-                    _mode = Mode::null;
-                    _asyncData._cbIndex(_asyncCallbackData, _perModeState._acquiredIndex);
-                }
-                else
-                {
-                    _mode = Mode::null;
-                    Scheduler::instance().ready(_asyncData._fiber);
-                }
-                return true;
-            }
-            break;
-
-        case Mode::all:
-        case Mode::allAsync:
-            {
-                if(link->_connected)
-                {
-                    dbgAssert(link->_waitable);
-                    dbgAssert(this == link->_waiter);
-                    link->_waitable->endAcquire(link);
-                    link->_connected = false;
-                }
-
-                _perModeState._acquiredAmount++;
-                dbgAssert(_perModeState._acquiredAmount <= _linksAmount);
-
-                if(_perModeState._acquiredAmount == _linksAmount)
-                {
-                    if(Mode::allAsync == _mode)
-                    {
-                        _mode = Mode::null;
-                        _asyncData._cb(_asyncCallbackData);
-                    }
-                    else
-                    {
-                        _mode = Mode::null;
-                        Scheduler::instance().ready(_asyncData._fiber);
-                    }
-                }
-
-                return true;
-            }
-            break;
-
-        case Mode::allAtOnce:
-        case Mode::allAtOnceAsync:
-            {
-                WWLink* linksEnd = _links + _linksAmount;
-                for(WWLink* iter = _links; iter != linksEnd; ++iter)
-                {
-                    if(iter == link)
-                    {
-                        continue;
-                    }
-
-                    if(iter->_waitable)
-                    {
-                        if(!iter->_waitable->canAcquire())
-                        {
-                            return false;
-                        }
-                    }
-                }
-                for(WWLink* iter = _links; iter != linksEnd; ++iter)
-                {
-                    if(iter->_connected)
-                    {
-                        dbgAssert(iter->_waitable);
-                        dbgAssert(this == iter->_waiter);
-                        iter->_waitable->endAcquire(iter);
-                        iter->_connected = false;
-                    }
-
-                    if(link == iter)
-                    {
-                        continue;
-                    }
-
-                    if(iter->_waitable)
-                    {
-                        bool b = iter->_waitable->tryAcquire();
-                        dbgAssert(b);
-                        (void)b;
-                    }
-                }
-
-                if(Mode::allAtOnceAsync == _mode)
-                {
-                    _mode = Mode::null;
-                    _asyncData._cb(_asyncCallbackData);
-                }
-                else
-                {
-                    _mode = Mode::null;
-                    Scheduler::instance().ready(_asyncData._fiber);
-                }
-                return true;
-            }
-            break;
-        }
-
-        dbgWarn("never here");
-        abort();
+        });
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -481,12 +125,12 @@ namespace dci::cmt::impl::details
         dbgAssert(link >= _links && link < _links+_linksAmount);
         dbgAssert(this == link->_waiter);
 
-        if(link->_connected)
+        if(WWLink::State::regularConnected == link->_state)
         {
             dbgAssert(link->_waitable);
             dbgAssert(link->_waiter);
             link->_waitable->endAcquire(link);
-            link->_connected = false;
+            link->_state = WWLink::State::regular;
         }
 
         link->_waitable = nullptr;
@@ -494,18 +138,213 @@ namespace dci::cmt::impl::details
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::throwTaskStopIfNeed()
+    template <class State> void Waiter::exec(auto&&... args)
     {
-        ctx::Fiber* currentFiber = Scheduler::instance().currentFiber();
+        dbgAssert(_state.holds<StateNull>());
 
-        if(currentFiber)
+        if(ctx::Fiber* currentFiber = Scheduler::instance().currentFiber())
         {
             dbgAssert(currentFiber->task());
             if(currentFiber->task()->stopRequested())
-            {
                 throw cmt::task::Stop{};
+        }
+
+        State& state = _state.emplace<State>(std::forward<decltype(args)>(args)...);
+
+        if(ready(state))
+        {
+            commit(state);
+            reset();
+
+            _mode.visit([&]<class Mode>(Mode& mode)
+            {
+                if constexpr(std::is_same_v<ModeSync, Mode>)
+                {
+                    return;
+                }
+
+                if constexpr(std::is_same_v<ModeAsync, Mode>)
+                {
+                    mode._cb(mode._cbData);
+                    return;
+                }
+
+                dbgFatal("never here");
+            });
+
+            return;
+        }
+
+        beginAcquire();
+
+        _mode.visit([&]<class Mode>(Mode& mode)
+        {
+            if constexpr (std::is_same_v<ModeSync, Mode>)
+            {
+                mode._fiber = Scheduler::instance().currentFiber();
+                Scheduler::instance().hold();
+
+                task::Body* task = mode._fiber->task();
+                reset();
+                if(task->stopRequested())
+                    throw cmt::task::Stop{};
+
+                return;
+            }
+
+            if constexpr (std::is_same_v<ModeAsync, Mode>)
+            {
+                return;
+            }
+        });
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    bool Waiter::ready(StateNull& /*state*/, WWLink* /*offeredFrom*/)
+    {
+        return false;
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    bool Waiter::ready(StateAll& /*state*/, WWLink* offeredFrom)
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(&link != offeredFrom && link._waitable && !link._waitable->canAcquire())
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    bool Waiter::ready(StateAny& state, WWLink* offeredFrom)
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(&link == offeredFrom || !link._waitable || link._waitable->canAcquire())
+            {
+                *state._acquiredIndex = linkIndex;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    bool Waiter::ready(StateExpr& state, WWLink* offeredFrom)
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(&link == offeredFrom || !link._waitable || link._waitable->canAcquire())
+            {
+                state._bits[linkIndex/CHAR_BIT] |= std::byte{1} << (linkIndex%CHAR_BIT);
+            }
+            else
+            {
+                state._bits[linkIndex/CHAR_BIT] &= ~(std::byte{1} << (linkIndex%CHAR_BIT));
+            }
+        }
+
+        return state._evaluator(state._evaluatorData);
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Waiter::commit(StateNull& /*state*/, WWLink* /*offeredFrom*/)
+    {
+        dbgFatal("never here");
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Waiter::commit(StateAll& /*state*/, WWLink* offeredFrom)
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(WWLink::State::repeat == link._state)
+            {
+                continue;
+            }
+            if(&link != offeredFrom && link._waitable)
+            {
+                bool b = link._waitable->tryAcquire();
+                dbgAssert(b);
+                (void)b;
             }
         }
     }
 
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Waiter::commit(StateAny& state, WWLink* offeredFrom)
+    {
+        dbgAssert(*state._acquiredIndex < _linksAmount);
+        WWLink& link = _links[*state._acquiredIndex];
+        dbgAssert(WWLink::State::repeat != link._state);
+        if(&link != offeredFrom && link._waitable)
+        {
+            dbgAssert(link._waitable->canAcquire());
+            bool b = link._waitable->tryAcquire();
+            dbgAssert(b);
+            (void)b;
+        }
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Waiter::commit(StateExpr& state, WWLink* offeredFrom)
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(WWLink::State::repeat == link._state)
+            {
+                continue;
+            }
+            bool bit = std::byte{1} == ((state._bits[linkIndex/CHAR_BIT] >> (linkIndex%CHAR_BIT)) & std::byte{1});
+            if(bit && &link != offeredFrom && link._waitable)
+            {
+                dbgAssert(link._waitable->canAcquire());
+                bool b = link._waitable->tryAcquire();
+                dbgAssert(b);
+                (void)b;
+            }
+        }
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Waiter::beginAcquire()
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(WWLink::State::regular == link._state && link._waitable)
+            {
+                dbgAssert(!link._waiter);
+                link._waiter = this;
+                link._waitable->beginAcquire(&link);
+                link._state = WWLink::State::regularConnected;
+            }
+        }
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    void Waiter::endAcquire()
+    {
+        for(std::size_t linkIndex{}; linkIndex<_linksAmount; ++linkIndex)
+        {
+            WWLink& link = _links[linkIndex];
+            if(WWLink::State::regularConnected == link._state)
+            {
+                dbgAssert(link._waitable);
+                dbgAssert(this == link._waiter);
+                link._waitable->endAcquire(&link);
+                link._state = WWLink::State::regular;
+            }
+        }
+    }
 }

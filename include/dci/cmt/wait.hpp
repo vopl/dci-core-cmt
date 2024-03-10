@@ -12,23 +12,35 @@
 
 namespace dci::cmt
 {
-    template <class... Waitables> std::size_t    waitAny         (Waitables&... waitables);
-    template <class... Waitables> void           waitAll         (Waitables&... waitables);
-    template <class... Waitables> void           waitAllAtOnce   (Waitables&... waitables);
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template <details::CWaitableOrContainer... Waitables> std::size_t waitAny (Waitables&... waitables);
+    template <details::CWaitableOrContainer... Waitables> void        waitAll (Waitables&... waitables);
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    template <class... Waitables> std::size_t waitAny(Waitables&... waitables)
+    template <details::CExpr Expr> std::bitset<details::expr::countWaitables<Expr>()> wait(Expr&& expr);
+    template <details::CVSrc VSrc> std::bitset<1                                    > wait(VSrc&& vSrc);
+}
+
+namespace dci::cmt
+{
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template <details::CWaitableOrContainer... Waitables> std::size_t waitAny(Waitables&... waitables)
     {
-        return details::waiterCaller<details::WaitKind::any>(waitables...);
+        return details::waiterCaller<details::Kind::any>(waitables...);
     }
 
-    template <class... Waitables> void waitAll(Waitables&... waitables)
+    template <details::CWaitableOrContainer... Waitables> void waitAll(Waitables&... waitables)
     {
-        return details::waiterCaller<details::WaitKind::all>(waitables...);
+        return details::waiterCaller<details::Kind::all>(waitables...);
     }
 
-    template <class... Waitables> void waitAllAtOnce(Waitables&... waitables)
+    template <details::CExpr Expr> std::bitset<details::expr::countWaitables<Expr>()> wait(Expr&& expr)
     {
-        return details::waiterCaller<details::WaitKind::allAtOnce>(waitables...);
+        return details::waiterCaller<details::Kind::expr>(expr);
+    }
+
+    template <details::CVSrc VSrc> std::bitset<1> wait(VSrc&& vSrc)
+    {
+        return wait(details::Val{&vSrc});
     }
 }

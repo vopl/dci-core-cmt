@@ -21,16 +21,16 @@ namespace dci::cmt::details
         void operator=(const Waiter&) = delete;
 
     public:
+        using ExprEvaluator = bool(*)(void* eeData);
+
+    public:
         Waiter(WWLink* links, std::size_t amount);
+        Waiter(WWLink* links, std::size_t amount, void(*cb)(void* cbData), void* cbData);
         ~Waiter();
 
-        std::size_t any();
+        void any(std::size_t* acquiredIndex);
         void all();
-        void allAtOnce();
-
-        void any(void(*cb)(void* cbData, std::size_t index), void* cbData);
-        void all(void(*cb)(void* cbData), void* cbData);
-        void allAtOnce(void(*cb)(void* cbData), void* cbData);
+        void expr(ExprEvaluator ee, void* eeData, std::byte* bits);
 
         void reset();
     };

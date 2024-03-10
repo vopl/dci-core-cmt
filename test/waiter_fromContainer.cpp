@@ -22,13 +22,11 @@ TEST(cmt, waiter_fromContainer)
 
         auto res1 = whenAny(e1, es);
         auto res2 = whenAll(e1, es);
-        auto res3 = whenAllAtOnce(e1, es);
 
         yield();
 
         EXPECT_FALSE(res1.resolved());
         EXPECT_FALSE(res2.resolved());
-        EXPECT_FALSE(res3.resolved());
 
         e1.raise();
 
@@ -37,16 +35,13 @@ TEST(cmt, waiter_fromContainer)
 
         EXPECT_TRUE(res1.resolved());
         EXPECT_FALSE(res2.resolved());
-        EXPECT_FALSE(res3.resolved());
 
         e2.raise();
 
         EXPECT_TRUE(res2.waitValue());
-        EXPECT_TRUE(res3.waitValue());
 
         EXPECT_TRUE(res1.resolved());
         EXPECT_TRUE(res2.resolved());
-        EXPECT_TRUE(res3.resolved());
 
         allDone = true;
     };

@@ -8,6 +8,7 @@
 #pragma once
 
 #include <dci/utils/intrusiveDlist.hpp>
+#include <cstdint>
 
 namespace dci::cmt::impl
 {
@@ -27,6 +28,11 @@ namespace dci::cmt::details
     {
         impl::details::Waiter * _waiter {};
         impl::Waitable *        _waitable {};
-        bool                    _connected {};
+        enum class State
+        {
+            regular,
+            regularConnected,
+            repeat,
+        }                       _state{State::regular};
     };
 }

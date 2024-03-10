@@ -11,7 +11,7 @@
 using namespace dci::cmt;
 
 /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-TEST(cmt, wait)
+TEST(cmt, wait1)
 {
     spawn() += []
     {
@@ -24,21 +24,48 @@ TEST(cmt, wait)
             auto res2 = spawnv() += [&]{
                 waitAll(e);
             };
-            auto res3 = spawnv() += [&]{
-                waitAllAtOnce(e);
+
+            yield();
+
+            EXPECT_FALSE(res1.resolved());
+            EXPECT_FALSE(res2.resolved());
+
+            e.raise();
+
+            EXPECT_TRUE(res1.waitValue());
+            EXPECT_TRUE(res2.waitValue());
+
+            EXPECT_EQ(res1.value(), 0u);
+        }
+    };
+
+    executeReadyFibers();
+}
+
+/////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+TEST(cmt, wait2)
+{
+    spawn() += []
+    {
+        {
+            Event e;
+
+            auto res1 = spawnv() += [&]{
+                return waitAny(e);
+            };
+            auto res2 = spawnv() += [&]{
+                waitAll(e);
             };
 
             yield();
 
             EXPECT_FALSE(res1.resolved());
             EXPECT_FALSE(res2.resolved());
-            EXPECT_FALSE(res3.resolved());
 
             e.raise();
 
             EXPECT_TRUE(res1.waitValue());
             EXPECT_TRUE(res2.waitValue());
-            EXPECT_TRUE(res3.waitValue());
 
             EXPECT_EQ(res1.value(), 0u);
         }
@@ -52,8 +79,44 @@ TEST(cmt, wait)
             auto res2 = spawnv() += [&]{
                 waitAll(e0, e1);
             };
+
+            yield();
+
+            EXPECT_FALSE(res1.resolved());
+            EXPECT_FALSE(res2.resolved());
+
+            e1.raise();
+
+            EXPECT_TRUE(res1.waitValue());
+            EXPECT_EQ(res1.value(), 1u);
+            EXPECT_FALSE(res2.resolved());
+
+            e0.raise();
+
+            EXPECT_TRUE(res1.waitValue());
+            EXPECT_TRUE(res2.waitValue());
+        }
+    };
+
+    executeReadyFibers();
+}
+
+/////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+TEST(cmt, waitExpr)
+{
+    spawn() += []
+    {
+        {
+            Event e0, e1, e2;
+
+            auto res1 = spawnv() += [&]{
+                return wait(e0 || e1);
+            };
+            auto res2 = spawnv() += [&]{
+                return wait(e0 && e1);
+            };
             auto res3 = spawnv() += [&]{
-                waitAllAtOnce(e0, e1);
+                return wait((e0 || !e1) && e2);
             };
 
             yield();
@@ -62,19 +125,97 @@ TEST(cmt, wait)
             EXPECT_FALSE(res2.resolved());
             EXPECT_FALSE(res3.resolved());
 
-            e1.raise();
-
-            EXPECT_TRUE(res1.waitValue());
-            EXPECT_EQ(res1.value(), 1u);
-            EXPECT_FALSE(res2.resolved());
-            EXPECT_FALSE(res3.resolved());
-
             e0.raise();
 
             EXPECT_TRUE(res1.waitValue());
+            EXPECT_EQ(res1.value(), (std::bitset<2>{0b01}));
+            EXPECT_FALSE(res2.resolved());
+            EXPECT_FALSE(res3.resolved());
+
+            e1.raise();
+
             EXPECT_TRUE(res2.waitValue());
+            EXPECT_EQ(res2.value(), (std::bitset<2>{0b11}));
+            EXPECT_FALSE(res3.waitValue());
+
+            e1.reset();
+            e2.raise();
+
             EXPECT_TRUE(res3.waitValue());
+            EXPECT_EQ(res3.value(), (std::bitset<3>{0b101}));
         }
+    };
+
+    executeReadyFibers();
+}
+
+/////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+TEST(cmt, waitAnyWithRepeats)
+{
+    spawn() += []
+    {
+        Event e1,e2;
+
+        auto res = spawnv() += [&]{
+            return waitAny(e1,e1,e1,e2,e1,e2);
+        };
+
+        yield();
+
+        EXPECT_FALSE(res.resolved());
+
+        e1.raise();
+
+        EXPECT_TRUE(res.waitValue());
+        EXPECT_EQ(res.value(), 0u);
+    };
+
+    executeReadyFibers();
+}
+
+/////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+TEST(cmt, waitAllWithRepeats)
+{
+    spawn() += []
+    {
+        Event e1,e2;
+
+        auto res = spawnv() += [&]{
+            return waitAll(e1,e1,e1,e2,e1,e2);
+        };
+
+        yield();
+
+        EXPECT_FALSE(res.resolved());
+
+        e1.raise();
+        e2.raise();
+
+        EXPECT_TRUE(res.waitValue());
+    };
+
+    executeReadyFibers();
+}
+
+/////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+TEST(cmt, waitExprWithRepeats)
+{
+    spawn() += []
+    {
+        Event e1,e2;
+
+        auto res = spawnv() += [&]{
+            return wait(e1||e1||e1||e2||e1||e2);
+        };
+
+        yield();
+
+        EXPECT_FALSE(res.resolved());
+
+        e1.raise();
+
+        EXPECT_TRUE(res.waitValue());
+        EXPECT_EQ(res.value(), (std::bitset<6>{0b010111}));
     };
 
     executeReadyFibers();

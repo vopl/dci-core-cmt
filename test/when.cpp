@@ -26,12 +26,9 @@ TEST(cmt, when)
             whenAll(e).then() += [&](){
                 progress++;
             };
-            whenAllAtOnce(e).then() += [&](){
-                progress++;
-            };
             e.raise();
             yield();
-            EXPECT_EQ(progress, 3);
+            EXPECT_EQ(progress, 2);
         }
 
         {
@@ -45,16 +42,13 @@ TEST(cmt, when)
             whenAll(e0, e1).then() += [&](){
                 progress++;
             };
-            whenAllAtOnce(e0, e1).then() += [&](){
-                progress++;
-            };
             e0.raise();
             yield();
             EXPECT_EQ(progress, 1);
 
             e1.raise();
             yield();
-            EXPECT_EQ(progress, 3);
+            EXPECT_EQ(progress, 2);
         }
 
         {
@@ -68,16 +62,13 @@ TEST(cmt, when)
             whenAll(e0, e1).then() += [&](){
                 progress++;
             };
-            whenAllAtOnce(e0, e1).then() += [&](){
-                progress++;
-            };
             e1.raise();
             yield();
             EXPECT_EQ(progress, 1);
 
             e0.raise();
             yield();
-            EXPECT_EQ(progress, 3);
+            EXPECT_EQ(progress, 2);
         }
 
         {
@@ -99,7 +90,7 @@ TEST(cmt, when)
 
             e.raise();
             yield();
-            EXPECT_EQ(progress, 1);
+            EXPECT_EQ(progress, 0);
         }
 
         {
@@ -107,7 +98,7 @@ TEST(cmt, when)
             Pulser p;
 
             int progress = 0;
-            whenAllAtOnce(e, p).then() += [&](){
+            whenAll(e, p).then() += [&](){
                 progress++;
             };
 
@@ -129,17 +120,20 @@ TEST(cmt, when)
 
         {
             Event e;
-            Mutex m(RecursionMode::recursive);
+            Mutex m(RecursionMode::nonRecursive);
+            Mutex m2(RecursionMode::recursive);
 
             m.lock();
+            m2.lock();
 
             int progress = 0;
 
             spawn() += [&]
             {
-                whenAll(e, m).then() += [&](){
+                whenAll(e, m, m2).then() += [&](){
                     progress++;
-                    EXPECT_TRUE(m.canLock());//1. recursive, 2. was locked in current coro
+                    EXPECT_FALSE(m.canLock());
+                    EXPECT_TRUE(m2.canLock());//1. recursive, 2. was locked in current coro
                 };
             };
 
@@ -151,6 +145,7 @@ TEST(cmt, when)
             EXPECT_EQ(progress, 0);
 
             m.unlock();
+            m2.unlock();
             yield();
             EXPECT_EQ(progress, 1);
 

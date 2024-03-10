@@ -17,14 +17,20 @@ namespace dci::cmt::details
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    Waiter::Waiter(WWLink* links, std::size_t amount, void(*cb)(void* cbData), void* cbData)
+        : himpl::FaceLayout<Waiter, impl::details::Waiter>(links, amount, cb, cbData)
+    {
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
     Waiter::~Waiter()
     {
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    std::size_t Waiter::any()
+    void Waiter::any(std::size_t* acquiredIndex)
     {
-        return impl().any();
+        return impl().any(acquiredIndex);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
@@ -34,27 +40,9 @@ namespace dci::cmt::details
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::allAtOnce()
+    void Waiter::expr(ExprEvaluator ee, void* eeData, std::byte* bits)
     {
-        return impl().allAtOnce();
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::any(void(*cb)(void* cbData, std::size_t index), void* cbData)
-    {
-        return impl().any(cb, cbData);
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::all(void(*cb)(void* cbData), void* cbData)
-    {
-        return impl().all(cb, cbData);
-    }
-
-    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
-    void Waiter::allAtOnce(void(*cb)(void* cbData), void* cbData)
-    {
-        return impl().allAtOnce(cb, cbData);
+        return impl().expr(ee, eeData, bits);
     }
 
     /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
