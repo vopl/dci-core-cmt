@@ -12,10 +12,12 @@
 #include "../future.hpp"
 #include <dci/utils/dbg.hpp>
 #include <dci/utils/staticSort.hpp>
+#include <dci/utils/integer.hpp>
 
 #include <type_traits>
 #include <concepts>
 #include <bitset>
+#include <new>
 
 namespace dci::cmt::details
 {
@@ -302,8 +304,11 @@ namespace dci::cmt::details
     struct ExprEngine
     {
         static constexpr std::size_t _bitsAmount = expr::countWaitables<Expr>();
-        using BitsContainer = std::array<std::byte, (_bitsAmount+CHAR_BIT-1) / CHAR_BIT>;
-        BitsContainer _bitsContainer{};
+        using BitsContainerOptType = utils::integer::uintCover<std::min(_bitsAmount, sizeof(std::uint64_t)*CHAR_BIT)>;
+        static constexpr std::size_t _containerBitsAmount = std::max(_bitsAmount, sizeof(BitsContainerOptType)*CHAR_BIT);
+        static constexpr std::size_t _containerBytesAmount = (_containerBitsAmount+CHAR_BIT-1) / CHAR_BIT;
+        using BitsContainer = std::array<std::byte, _containerBytesAmount>;
+        alignas(BitsContainerOptType) BitsContainer _bitsContainer{};
 
         template <class T> class Tag {};
 
@@ -359,8 +364,9 @@ namespace dci::cmt::details
 
         std::bitset<_bitsAmount> bits4Result()
         {
-            std::bitset<_bitsAmount> res;
-            for(std::size_t i{}; i<res.size(); ++i)
+            BitsContainerOptType opt = *std::launder(reinterpret_cast<const BitsContainerOptType*>(_bitsContainer.data()));
+            std::bitset<_bitsAmount> res{opt};
+            for(std::size_t i{sizeof(BitsContainerOptType)*CHAR_BIT}; i<res.size(); ++i)
                 res[i] = bit(i);
             return res;
         };
