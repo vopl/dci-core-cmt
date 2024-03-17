@@ -11,7 +11,7 @@
 #include "../waitable.hpp"
 #include "../future.hpp"
 #include <dci/utils/dbg.hpp>
-#include <dci/utils/overloaded.hpp>
+#include <dci/utils/staticSort.hpp>
 
 #include <type_traits>
 #include <concepts>
@@ -185,24 +185,25 @@ namespace dci::cmt::details
 
     namespace links
     {
-        inline void markLinksRepeats(WWLink* links, std::size_t linksAmount)
+        void markLinksRepeats(WWLink* links, auto linksAmount)
         {
             WWLink** ordered = static_cast<WWLink**>(alloca(sizeof(WWLink*) * linksAmount));
             for(std::size_t linkIndex{}; linkIndex < linksAmount; ++linkIndex)
-            {
                 ordered[linkIndex] = links + linkIndex;
-            }
-            std::sort(ordered, ordered+linksAmount, [](WWLink* a, WWLink* b)
+
+            auto cmp = [](WWLink* a, WWLink* b)
             {
                 return a->_waitable < b->_waitable;
-            });
+            };
+
+            if constexpr(requires { utils::staticSort<linksAmount>(ordered, cmp); })
+                utils::staticSort<linksAmount>(ordered, cmp);
+            else
+                std::sort(ordered, ordered+linksAmount, cmp);
+
             for(std::size_t linkIndex{1}; linkIndex < linksAmount; ++linkIndex)
-            {
                 if(ordered[linkIndex-1]->_waitable == ordered[linkIndex]->_waitable)
-                {
                     ordered[linkIndex]->_state = WWLink::State::repeat;
-                }
-            }
         }
     }
 
@@ -216,7 +217,7 @@ namespace dci::cmt::details
         Links(Waitables&... waitables)
         {
             links::collectWaitables(_data, waitables...);
-            links::markLinksRepeats(_data, _size);
+            links::markLinksRepeats(_data, std::integral_constant<std::size_t, _size>{});
         }
     };
 
@@ -290,8 +291,9 @@ namespace dci::cmt::details
         {
             std::size_t valIdx{};
             links::collectWaitables(_data, expr, valIdx);
-            links::markLinksRepeats(_data, _size);
             dbgAssert(valIdx == _size);
+
+            links::markLinksRepeats(_data, std::integral_constant<std::size_t, _size>{});
         }
     };
 
@@ -481,14 +483,10 @@ namespace dci::cmt::details
                     auto res = _promise.future();
 
                     if constexpr(Kind::any == kind)
-                    {
                         _waiter.any(&this->_acquiredIndex);
-                    }
 
                     if constexpr(Kind::all == kind)
-                    {
                         _waiter.all();
-                    }
 
                     if constexpr(Kind::expr == kind)
                     {
