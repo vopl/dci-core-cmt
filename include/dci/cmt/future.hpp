@@ -84,6 +84,17 @@ namespace dci::cmt
         std::exception_ptr&& detachException();
 
     public:
+        Value&& operator*() &&;
+        Value& operator*() &;
+        const Value&& operator*() const &&;
+        const Value& operator*() const &;
+
+        Value&& operator->() &&;
+        Value& operator->() &;
+        const Value&& operator->() const &&;
+        const Value& operator->() const &;
+
+    public:
 
         /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
         template <class F>
@@ -388,6 +399,62 @@ namespace dci::cmt
         condition([&]{return _statePtr.charged();});
         wait();
         return std::move(_statePtr->exception());
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    Future<T>::Value&& Future<T>::operator*() &&
+    {
+        return std::move(value());
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    Future<T>::Value& Future<T>::operator*() &
+    {
+        return value();
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    const Future<T>::Value&& Future<T>::operator*() const &&
+    {
+        return std::move(value());
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    const Future<T>::Value& Future<T>::operator*() const &
+    {
+        return value();
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    Future<T>::Value&& Future<T>::operator->() &&
+    {
+        return std::move(value());
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    Future<T>::Value& Future<T>::operator->() &
+    {
+        return value();
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    const Future<T>::Value& Future<T>::operator->() const &
+    {
+        return value();
+    }
+
+    /////////0/////////1/////////2/////////3/////////4/////////5/////////6/////////7
+    template<class T>
+    const Future<T>::Value&& Future<T>::operator->() const &&
+    {
+        return std::move(value());
     }
 }
 
